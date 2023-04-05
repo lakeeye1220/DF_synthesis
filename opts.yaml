@@ -1,17 +1,17 @@
 resolution: 256
-target_class: 1
-model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50".
+target_class: 4
+model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50 vgg19_flower resnet18_CUB200",resnet34_tinyImageNet,resnet34_cifar100.
 dloss_function: ""  # "", "softmax", "pixelwise", or "features".
 init_method: "random"  # "mean", "top", "random", or "target".
 init_num: 1
 n_iters: 1
 use_noise_layer: True
-z_num: 30
-steps_per_z: 200
-lr: 0.001
+z_num: 20
+steps_per_z: 11
+lr: 0.01
 dr: 0.9
 alpha: 0.1
 noise_std: 0.1
-seed_z: 0
-intermediate_dir: "origin_car2_200/intermediate"
-final_dir: "origin_car2_200"
+seed_z: 200
+intermediate_dir: "resnet34_cifar10_codetest/intermediate"
+final_dir: "resnet34_cifar10_codetest"
