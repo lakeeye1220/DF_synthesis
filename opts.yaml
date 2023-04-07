@@ -1,17 +1,18 @@
 resolution: 256
-target_class: 4
+target_class: 7
 model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50 vgg19_flower resnet18_CUB200",resnet34_tinyImageNet,resnet34_cifar100.
+total_class: 10
 dloss_function: ""  # "", "softmax", "pixelwise", or "features".
 init_method: "random"  # "mean", "top", "random", or "target".
 init_num: 1
 n_iters: 1
 use_noise_layer: True
 z_num: 20
-steps_per_z: 11
+steps_per_z: 1001
 lr: 0.01
-dr: 0.9
+dr: 0.99
 alpha: 0.1
 noise_std: 0.1
-seed_z: 200
-intermediate_dir: "resnet34_cifar10_codetest/intermediate"
-final_dir: "resnet34_cifar10_codetest"
+seed_z: 100
+intermediate_dir: "resnet34_cifar10_horse_entropy_clip05/intermediate"
+final_dir: "resnet34_cifar10_horse_entropy_clip05"
