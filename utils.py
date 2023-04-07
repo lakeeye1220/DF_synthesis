@@ -4,12 +4,12 @@ import torch.nn as nn
 import torchvision.models as models
 from collections import OrderedDict
 
-from robustness import datasets, model_utils
+#from robustness import datasets, model_utils
 
-dim_z_dict = {128: 120, 256: 140, 512: 128} #원래는 100대신에 120
+dim_z_dict = {128: 120, 256: 140, 512: 128}
 attn_dict = {128: "64", 256: "128", 512: "64"}
-max_clamp_dict = {128: 0.83, 256: 0.2}
-min_clamp_dict = {128: -0.88, 256: -0.2} #256 0.61,-0.59
+max_clamp_dict = {128: 0.83, 256: 0.5}
+min_clamp_dict = {128: -0.88, 256: -0.5} #256 0.61,-0.59
 DATA_PATH_DICT = {
     "CIFAR": "/path/tools/cifar",
     "RestrictedImageNet": "/mnt/raid/qi/ILSVRC2012_img_train/ImageNet",
