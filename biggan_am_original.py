@@ -11,7 +11,8 @@ from torchvision.utils import save_image
 from utils import *
 from torch.autograd import Variable
 from resnet import ResNet34
-
+import numpy as np
+import math
 
 def get_diversity_loss(
     half_z_num, zs, dloss_function, pred_probs, net, resized_images_tensor):
@@ -72,9 +73,10 @@ def run_biggan_am(
     target_class,
     intermediate_dir,
     use_noise_layer,
+    total_class
 ):
     
-    embedding_layer = nn.Embedding(10,128) # num_embeddings, embedding_dim
+    embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
     optim_embedding = embedding_layer(torch.LongTensor([target_class])).detach()
     print("optim embedding : ",optim_embedding.shape)
     
@@ -99,7 +101,9 @@ def run_biggan_am(
     optimizer = optim.Adam(optim_params+[T], lr=lr, weight_decay=dr)
     torch.set_rng_state(state_z)
     #labels_target = torch.LongTensor([0,1,2,3,4,5,6,7,8,9] * 2).to(device)
-    
+    total_loss = []
+    total_T = []
+    total_prob =[]
     for epoch in range(n_iters):
         #zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)s
         for z_step in range(steps_per_z):
@@ -120,6 +124,11 @@ def run_biggan_am(
             loss = criterion(pred_logits/T.cuda(), labels)
             pred_probs = nn.functional.softmax(pred_logits, dim=1)
 
+            #softmax_o_T = F.softmax(pred_logits, dim = 1).mean(dim = 0)
+            softmax_o_T = pred_probs.mean(dim=0)
+            loss_entropy = (1.0 + (softmax_o_T * torch.log(softmax_o_T) / math.log(z_num)).sum())
+            loss +=loss_entropy
+
             if dloss_function:
                 diversity_loss = get_diversity_loss(
                     half_z_num,
@@ -139,10 +148,13 @@ def run_biggan_am(
             log_line = f"Epoch: {epoch:0=5d}\tStep: {z_step:0=5d}\t"
             log_line += f"Average Target Probability:{avg_target_prob:.4f}\t"
             log_line += f"Temperature Probability: {T.item():.3f}\t"
-            log_line += f"CE loss: {loss.item():.4f}"
+            log_line += f"CE loss: {loss.item():.4f}\t"
+            log_line += f"entropy loss: {loss_entropy.item():.4f}"
             print(log_line)
-
-
+            total_loss.append(loss.item())
+            total_T.append(T.item())
+            total_prob.append(avg_target_prob)
+    
             if intermediate_dir:
                 if z_step %50 ==0:
                     global_step_id = epoch * steps_per_z + z_step
@@ -153,6 +165,10 @@ def run_biggan_am(
                 )
 
             torch.cuda.empty_cache()
+    file_path = f"{intermediate_dir}/"
+    np.savetxt(os.path.join(file_path,'CE_loss.csv'), total_loss, fmt='%.4f')
+    np.savetxt(os.path.join(file_path,'temperature.csv'), total_T, fmt='%.3f')
+    np.savetxt(os.path.join(file_path,'gt_probability.csv'), total_prob, fmt='%.3f')
 
     return optim_comps
 
@@ -316,6 +332,7 @@ def main():
             target_class,
             intermediate_dir,
             opts["use_noise_layer"],
+            opts["total_class"]
         )
         if final_dir:
             save_final_samples(
