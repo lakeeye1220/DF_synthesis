@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 #from robustness import datasets, model_utils
 
-dim_z_dict = {128: 120, 256: 140, 512: 128}
+dim_z_dict = {128: 120, 256: 140, 512: 128} #원래는 100대신에 120
 attn_dict = {128: "64", 256: "128", 512: "64"}
 max_clamp_dict = {128: 0.83, 256: 0.5}
 min_clamp_dict = {128: -0.88, 256: -0.5} #256 0.61,-0.59
