@@ -107,6 +107,11 @@ def run_biggan_am(
     total_prob =[]
     for epoch in range(n_iters):
         #zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)s
+
+        # for saving best img(when CE loss is lowest)
+        best_loss = 0
+        best_img = None
+
         for z_step in range(steps_per_z):
             zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)
             optimizer.zero_grad()
@@ -171,8 +176,17 @@ def run_biggan_am(
                     save_image(
                     gan_images_tensor, output_image_path, normalize=True, nrow=10
                 )
+                    
+            if loss.item() > best_loss:
+                best_loss = loss.item()
+                best_img = gan_images_tensor
 
             torch.cuda.empty_cache()
+        
+        if best_img is not None:
+            best_path = f"{intermediate_dir}/best.jpg"
+            save_image(best_img, best_path, normalize=True, nrow=10)
+
     file_path = f"{intermediate_dir}/"
     np.savetxt(os.path.join(file_path,'CE_loss.csv'), total_loss, fmt='%.4f')
     np.savetxt(os.path.join(file_path,'temperature.csv'), total_T, fmt='%.3f')
