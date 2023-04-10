@@ -73,7 +73,8 @@ def run_biggan_am(
     target_class,
     intermediate_dir,
     use_noise_layer,
-    total_class
+    total_class,
+    writer
 ):
     
     embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
@@ -154,7 +155,13 @@ def run_biggan_am(
             total_loss.append(loss.item())
             total_T.append(T.item())
             total_prob.append(avg_target_prob)
-    
+
+            # tensorboard logging
+            writer.add_scalar(f"CE loss", loss.item(), z_step)
+            writer.add_scalar(f"avg target prob", avg_target_prob, z_step)
+            writer.add_scalar(f"T", T.item(), z_step)
+            writer.add_scalar(f"entropy loss", loss_entropy.item(), z_step)
+            
             if intermediate_dir:
                 if z_step %50 ==0:
                     global_step_id = epoch * steps_per_z + z_step
@@ -308,6 +315,10 @@ def main():
         #repeat_original_embedding = original_embedding_clamped
         num_final = 4
         repeat_original_embedding = original_embedding_clamped.repeat(num_final, 1).to(device)
+    
+    # tensorboard writer
+    from tensorboardX import SummaryWriter
+    writer = SummaryWriter(f'{final_dir}/result')
 
     for i in range(int(opts["n_iters"])):
         optim_comps = run_biggan_am(
@@ -332,7 +343,8 @@ def main():
             target_class,
             intermediate_dir,
             opts["use_noise_layer"],
-            opts["total_class"]
+            opts["total_class"],
+            writer=writer
         )
         if final_dir:
             save_final_samples(
