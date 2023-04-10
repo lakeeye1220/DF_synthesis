@@ -146,12 +146,13 @@ def run_biggan_am(
             
             avg_target_prob = pred_probs[:, target_class].mean().item()
             #avg_target_prob = pred_probs[:, np.array(labels_target.cpu())].mean().item()
-            log_line = f"Epoch: {epoch:0=5d}\tStep: {z_step:0=5d}\t"
-            log_line += f"Average Target Probability:{avg_target_prob:.4f}\t"
-            log_line += f"Temperature Probability: {T.item():.3f}\t"
-            log_line += f"CE loss: {loss.item():.4f}\t"
-            log_line += f"entropy loss: {loss_entropy.item():.4f}"
-            print(log_line)
+            if z_step %50 == 0:
+                log_line = f"Epoch: {epoch:0=5d}\tStep: {z_step:0=5d}\t"
+                log_line += f"Average Target Probability:{avg_target_prob:.4f}\t"
+                log_line += f"Temperature Probability: {T.item():.3f}\t"
+                log_line += f"CE loss: {loss.item():.4f}\t"
+                log_line += f"entropy loss: {loss_entropy.item():.4f}"
+                print(log_line)
             total_loss.append(loss.item())
             total_T.append(T.item())
             total_prob.append(avg_target_prob)

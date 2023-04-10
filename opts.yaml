@@ -1,3 +1,5 @@
+# CUDA_VISIBLE_DEVICES=0,1 python3 biggan_am_original.py
+
 resolution: 256
 target_class: 0
 model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50 vgg19_flower resnet18_CUB200",resnet34_tinyImageNet,resnet34_cifar100.
