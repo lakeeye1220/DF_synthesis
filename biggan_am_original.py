@@ -74,7 +74,8 @@ def run_biggan_am(
     intermediate_dir,
     use_noise_layer,
     total_class,
-    writer
+    writer,
+    dynamic_T = True
 ):
     
     embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
@@ -95,18 +96,22 @@ def run_biggan_am(
         optim_params += [params for params in noise_layer.parameters()]
         optim_comps["noise_layer"] = noise_layer
 
-    T = torch.empty((1,))
-    torch.nn.init.normal(T,5.0,1)
-    T.requires_grad_(True)
+    if dynamic_T:
+        T = torch.empty((1,))
+        torch.nn.init.normal(T,5.0,1)
+        T.requires_grad_(True)
 
-    optimizer = optim.Adam(optim_params+[T], lr=lr, weight_decay=dr)
+        optimizer = optim.Adam(optim_params+[T], lr=lr, weight_decay=dr)
+    else:
+        T = torch.tensor([1])
+        optimizer = optim.Adam(optim_params, lr=lr, weight_decay=dr)
     torch.set_rng_state(state_z)
     #labels_target = torch.LongTensor([0,1,2,3,4,5,6,7,8,9] * 2).to(device)
     total_loss = []
     total_T = []
     total_prob =[]
     for epoch in range(n_iters):
-        #zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)s
+        #zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)
 
         # for saving best img(when CE loss is lowest)
         best_loss = 0
@@ -127,13 +132,22 @@ def run_biggan_am(
                 gan_images_tensor, size=32 #Flower 224, CelebA 128
             )
             pred_logits,_,_,_,_,_ = net(resized_images_tensor)
-            loss = criterion(pred_logits/T.cuda(), labels)
+            if dynamic_T:
+                loss = criterion(pred_logits/T.cuda(), labels)
+            else:
+                loss = criterion(pred_logits, labels)
             pred_probs = nn.functional.softmax(pred_logits, dim=1)
 
             #softmax_o_T = F.softmax(pred_logits, dim = 1).mean(dim = 0)
             softmax_o_T = pred_probs.mean(dim=0)
+
+            # entropy loss
             loss_entropy = (1.0 + (softmax_o_T * torch.log(softmax_o_T) / math.log(z_num)).sum())
+            
+            # loss entropy off
+            # loss_entropy = torch.tensor([0])
             loss +=loss_entropy
+            
 
             if dloss_function:
                 diversity_loss = get_diversity_loss(
@@ -306,8 +320,17 @@ def main():
 
     target_class = opts["target_class"]
     
-    criterion = nn.CrossEntropyLoss()
+
     labels = torch.LongTensor([target_class] * z_num).to(device)
+    if opts["l_smooth"] > 0:
+        from utils import LabelSmoothingLoss
+        dynamic_T = False
+        criterion = LabelSmoothingLoss(classes=opts["total_class"], smoothing=opts["l_smooth"])
+    else:
+        dynamic_T = True
+        criterion = nn.CrossEntropyLoss()
+        
+
     #labels = torch.LongTensor([0,1,2,3,4,5,6,7,8,9] * 2).to(device)
     state_z = torch.get_rng_state()
 
@@ -359,7 +382,8 @@ def main():
             intermediate_dir,
             opts["use_noise_layer"],
             opts["total_class"],
-            writer=writer
+            writer=writer,
+            dynamic_T=dynamic_T
         )
         if final_dir:
             save_final_samples(
