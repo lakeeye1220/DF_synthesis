@@ -6,24 +6,43 @@ import numpy as np
 import sys
 import os
 
-sys.path.append('/home/work/yujin/DF_synthesis')
 print(sys.path)
 import BigGAN
-from utils2 import get_config
+from utils import get_config
 
 class_idx = 9
-prefix="../DF_synthesis/resnet34_cifar10_CE_entropy_clip05_"+str(class_idx)
+prefix="./exprs/resnet34_exp2/cifar10_class"+str(class_idx)
 save_prefix="./fake_images/"+str(class_idx)+"/"
-batch_size=128
+batch_size=32
 num_generations=10
+
+def denormalize(image_tensor, dataset):
+    channel_num = 0
+    if dataset == 'cifar10':
+        mean = np.array([0.4914, 0.4822, 0.4465])
+        std = np.array([0.2023, 0.1994, 0.2010])
+        channel_num = 3
+    elif dataset == 'imagenet':
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        channel_num = 3
+
+    for c in range(channel_num):
+        m, s = mean[c], std[c]
+        image_tensor[:, c] = torch.clamp(image_tensor[:, c]*s+m, 0, 1)
+
+    return image_tensor
+
 
 def save_final_images(images,targets,num_generations,save_prefix):
     images = images.data.clone()
     for id in range(images.shape[0]):
         class_id = str(targets[id].item()).zfill(2)
         image = images[id].reshape(3,32,32)
+        image = denormalize(image,'cifar10')
         image_np = images[id].data.cpu().numpy()
         pil_images = torch.from_numpy(image_np)
+        
 
         #save_pth = os.path.join(save_prefix,'final_images/s{}'.format(class_id))
         if not os.path.exists(save_prefix):
@@ -33,11 +52,12 @@ def save_final_images(images,targets,num_generations,save_prefix):
 
 print("Loading the BigGAN generator model...", flush=True)
 
+
 resolution = 256
 config = get_config(resolution)
 G = BigGAN.Generator(**config)
 G.load_state_dict(
-    torch.load("../DF_synthesis/pretrained_weights/biggan_256_weights.pth"), strict=False
+    torch.load("./pretrained_weights/biggan_256_weights.pth"), strict=False
 )
 G = nn.DataParallel(G).to('cuda')
 G = G.cuda()
