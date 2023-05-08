@@ -30,8 +30,28 @@ def get_data(data_orig, data_perb, direction, alpha):
     for d_orig, d_perb, d in zip(data_orig, data_perb, direction):
         d_perb.data = d_orig.data + alpha * d
         perb_list.append(d_perb)
-    perbs = torch.cat(perb_list,0)
+    perbs = torch.stack(perb_list, 0)
+    if torch.equal(perbs, data_orig) and alpha != 0:
+        print('origin and perturbed data are euqal')
     return perbs
+
+def denormalize(image_tensor, dataset):
+    channel_num = 0
+    if dataset == 'cifar10':
+        mean = np.array([0.4914, 0.4822, 0.4465])
+        std = np.array([0.2023, 0.1994, 0.2010])
+        channel_num = 3
+    elif dataset == 'imagenet':
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        channel_num = 3
+
+    for c in range(channel_num):
+        m, s = mean[c], std[c]
+        image_tensor[:, c] = torch.clamp(image_tensor[:, c]*s+m, 0, 1)
+
+    return image_tensor
+
 
 def save_img(input, file_name):
     grid = vutils.make_grid(input, nrow=10)
@@ -64,18 +84,23 @@ if __name__ == "__main__":
     # net = load_net(model_name=args.model).to(args.device)
     criterion = nn.CrossEntropyLoss()
 
+    transform_train = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+
     # real loader
-    dataset = datasets.CIFAR10(root=args.data_path, train=True, download=True, transform=transforms.ToTensor())
+    dataset = datasets.CIFAR10(root=args.data_path, train=True, download=True, transform=transform_train)
     subsets = {target: Subset(dataset, [i for i, (x, y) in enumerate(dataset) if y == target]) for _, target in dataset.class_to_idx.items()}
     loaders = {target: DataLoader(subset,batch_size=args.batch_size, shuffle=True) for target, subset in subsets.items()}
 
     # biggan loader
-    fake_trainset = datasets.ImageFolder('./fake_images', transform=transforms.ToTensor())
+    fake_trainset = datasets.ImageFolder('./fake_images', transform=transform_train)
     fake_subsets = {target: Subset(fake_trainset, [i for i, (x, y) in enumerate(fake_trainset) if y == target]) for _, target in fake_trainset.class_to_idx.items()}
     fake_loaders = {target: DataLoader(fake_subset,batch_size=args.batch_size, shuffle=True) for target, fake_subset in fake_subsets.items()}
 
     # NI loader
-    NI_trainset = datasets.ImageFolder('/home/dyl9912/workspace/KIST/NaturalInversion-main/images/official/final_images', transform=transforms.ToTensor())
+    NI_trainset = datasets.ImageFolder('/home/dyl9912/workspace/KIST/NaturalInversion-main/images/official/final_images', transform=transform_train)
     NI_subsets = {target: Subset(NI_trainset, [i for i, (x, y) in enumerate(NI_trainset) if y == target]) for _, target in NI_trainset.class_to_idx.items()}
     NI_loaders = {target: DataLoader(NI_subset,batch_size=args.batch_size, shuffle=True) for target, NI_subset in NI_subsets.items()}
 
@@ -84,18 +109,21 @@ if __name__ == "__main__":
     NI_loader = NI_loaders[args.class_idx]
 
     for input, target in loader:
+        input = denormalize(input, 'cifar10')
         save_img(input, file_name=f"{file_path}/real.png")
         break
 
     for f_input, f_target in fake_loader:
+        f_input = denormalize(f_input, 'cifar10')
         save_img(f_input, file_name=f"{file_path}/fake.png")
         break
 
     for n_input, n_target in NI_loader:
+        n_input = denormalize(n_input, 'cifar10')
         save_img(n_input, file_name=f"{file_path}/ni.png")
         break
 
-    
+    print("input shapes: ", input.shape, f_input.shape, n_input.shape)
     print("file all saved")
 
     input = input.to(args.device)
@@ -122,7 +150,6 @@ if __name__ == "__main__":
     f_top_eigenvalues, f_top_eigenvector = hessian_comp_fake.eigenvalues(top_n=2)
     n_top_eigenvalues, n_top_eigenvector = hessian_comp_ni.eigenvalues(top_n=2)
 
-
     # lambda is a small scalar that we use to perturb the model parameters along the eigenvectors 
     lams1 = np.linspace(-0.5, 0.5, 31).astype(np.float32)
     lams2 = np.linspace(-0.5, 0.5, 31).astype(np.float32)
@@ -145,54 +172,29 @@ if __name__ == "__main__":
 
     if args.to_perturb == "input":
 
-        data_perb1 = input
-        data_perb2 = input
+        data_perb1 = input.clone()
+        data_perb2 = input.clone()
 
-        f_data_perb1 = f_input
-        f_data_perb2 = f_input
+        f_data_perb1 = f_input.clone()
+        f_data_perb2 = f_input.clone()
 
-        n_data_perb1 = n_input
-        n_data_perb2 = n_input
-
+        n_data_perb1 = n_input.clone()
+        n_data_perb2 = n_input.clone()
+        
         for lam1 in tqdm(lams1, desc='lamda1'):
             for lam2 in lams2:
-                data_perb1 = get_data(input, data_perb1, top_eigenvector[0], lam1)
-                data_perb2 = get_data(data_perb1, data_perb2, top_eigenvector[1], lam2)
+                data_perb1 = get_data(input, data_perb1, top_eigenvector[0][0], lam1)
+                data_perb2 = get_data(data_perb1, data_perb2, top_eigenvector[1][0], lam2)
 
-                f_data_perb1 = get_data(f_input, f_data_perb1, f_top_eigenvector[0], lam1)
-                f_data_perb2 = get_data(f_data_perb1, f_data_perb2, f_top_eigenvector[1], lam2)
+                f_data_perb1 = get_data(f_input, f_data_perb1, f_top_eigenvector[0][0], lam1)
+                f_data_perb2 = get_data(f_data_perb1, f_data_perb2, f_top_eigenvector[1][0], lam2)
 
-                n_data_perb1 = get_data(n_input, n_data_perb1, n_top_eigenvector[0], lam1)
-                n_data_perb2 = get_data(n_data_perb1, n_data_perb2, n_top_eigenvector[1], lam2)
+                n_data_perb1 = get_data(n_input, n_data_perb1, n_top_eigenvector[0][0], lam1)
+                n_data_perb2 = get_data(n_data_perb1, n_data_perb2, n_top_eigenvector[1][0], lam2)
                     
                 loss_list.append((lam1, lam2, criterion(model_perb1(data_perb2)[0], target).item()))
                 f_loss_list.append((lam1, lam2, criterion(model_perb1(f_data_perb2)[0], f_target).item()))
                 n_loss_list.append((lam1, lam2, criterion(model_perb1(n_data_perb2)[0], n_target).item()))
-
-                if data_perb1 is data_perb2:
-                    print("data_perb1 is shallow copy of data_perb2")
-
-                if torch.equal(data_perb1, data_perb2):
-                    print('1, 2 equal')
-                
-                if lam1 == 0 and lam2 == 0:
-                    print('should same with input')
-                    print(criterion(model_perb1(data_perb2)[0], target).item())
-                    print(criterion(net(input)[0], target).item())
-                    print(criterion(net(data_perb2)[0], target).item())
-
-                    if torch.allclose(input, data_perb2, atol=1e-12, rtol=0):
-                        print("The two tensors are exactly the same")
-                    else:
-                        print("The two tensors are not exactly the same")
-
-                    if torch.equal(input, data_perb2):
-                        print("equal")
-                    else:
-                        print("not equal")
-
-                if torch.equal(input, data_perb2):
-                    print('input, 2')
     else:
         pass
 
