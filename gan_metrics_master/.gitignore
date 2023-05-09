@@ -1,0 +1,17 @@
+.vscode
+
+cifar10
+stats
+gold
+*.npz
+
+venv
+__pycache__
+.python-version
+
+build
+dist
+pytorch_gan_metrics*
+.tox
+
+!pytorch_gan_metrics

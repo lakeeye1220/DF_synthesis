@@ -64,8 +64,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=256, type=int)
     parser.add_argument("--device", default='cuda', type=str)
     parser.add_argument("--model", default="resnet34", type=str)
-    parser.add_argument("--daaset", default="cifar10", type=str)
-    parser.add_argument("--data_path", type=str)
+    parser.add_argument("--dataset", default="cifar10", type=str)
+    parser.add_argument("--data_path", default="./", type=str)
     parser.add_argument("--to_perturb", default="input", type=str)
     parser.add_argument("--class_idx", default=0, type=int)
 

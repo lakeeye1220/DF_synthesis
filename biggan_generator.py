@@ -5,16 +5,19 @@ import torchvision.utils as vutils
 import numpy as np
 import sys
 import os
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, Subset
+from gan_metrics_master.pytorch_gan_metrics.utils import get_inception_score_and_fid
 
 print(sys.path)
 import BigGAN
 from utils import get_config
 
-class_idx = 9
-prefix="./exprs/resnet34_exp2/cifar10_class"+str(class_idx)
+class_idx = 8
+prefix="./exprs/TV/cifar10_"+str(class_idx)
 save_prefix="./fake_images/"+str(class_idx)+"/"
-batch_size=32
-num_generations=10
+batch_size=40
+num_generations=125
 
 def denormalize(image_tensor, dataset):
     channel_num = 0
@@ -75,11 +78,11 @@ print("repeat class embedding: ",repeat_class_embedding.shape)
 for i in range(num_generations):
     zs = torch.randn((z_num,140),requires_grad=False).cuda()
 
-    noise_layer = nn.Linear(140,140)
+    """noise_layer = nn.Linear(140,140)
     noise_layer.load_state_dict(torch.load(f"{prefix}/0_noise_layer.pth"))
 
     noise_layer = noise_layer.cuda()
-    zs = noise_layer(zs)
+    zs = noise_layer(zs)"""
     print("zs shape :",zs.shape)
     with torch.no_grad():
         gan_images_tensor = G(zs, repeat_class_embedding)
@@ -88,3 +91,28 @@ for i in range(num_generations):
             )
     targets = torch.LongTensor([class_idx] * batch_size).cuda()
     save_final_images(resized_images_tensor,targets,i,save_prefix)
+
+batch_size=256
+
+transform_train = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+
+# biggan loader
+dataset = datasets.ImageFolder('./fake_images', transform=transform_train)
+subsets = {target: Subset(dataset, [i for i, (x, y) in enumerate(dataset) if y == target]) for _, target in dataset.class_to_idx.items()}
+loaders = {target: DataLoader(subsets,batch_size=batch_size, shuffle=True) for target, subsets in subsets.items()}
+
+loader = loaders[class_idx]
+stat_path = "cifar10_npz/cifar10_norm/statistics_class" + f"{class_idx}.npz"
+
+print("All Data Loaded")
+
+(IS, IS_std), FID = get_inception_score_and_fid(
+        loader,
+        stat_path,
+        use_torch=True,
+        verbose=True)
+
+print(IS, IS_std, FID)
