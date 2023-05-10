@@ -8,6 +8,7 @@ import os
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 from gan_metrics_master.pytorch_gan_metrics.utils import get_inception_score_and_fid
+from tqdm import tqdm
 
 print(sys.path)
 import BigGAN
@@ -38,6 +39,10 @@ def denormalize(image_tensor, dataset):
 
 
 def save_final_images(images,targets,num_generations,save_prefix):
+    #save_pth = os.path.join(save_prefix,'final_images/s{}'.format(class_id))
+    if not os.path.exists(save_prefix):
+        os.makedirs(save_prefix)
+
     images = images.data.clone()
     for id in range(images.shape[0]):
         class_id = str(targets[id].item()).zfill(2)
@@ -46,11 +51,6 @@ def save_final_images(images,targets,num_generations,save_prefix):
         image_np = images[id].data.cpu().numpy()
         pil_images = torch.from_numpy(image_np)
         
-
-        #save_pth = os.path.join(save_prefix,'final_images/s{}'.format(class_id))
-        if not os.path.exists(save_prefix):
-            os.makedirs(save_prefix)
-
         vutils.save_image(image,os.path.join(save_prefix,'{}_output_{}'.format(num_generations,id))+'.png',normalize=True,scale_each=True,nrow=1)
 
 print("Loading the BigGAN generator model...", flush=True)
@@ -72,18 +72,18 @@ print("class embedding: ",class_embedding.shape)
 #print(class_embedding[0])
 #print(class_embedding[1])
 z_num = batch_size
-repeat_class_embedding = class_embedding.repeat(int(z_num/4), 1).cuda()
+# repeat_class_embedding = class_embedding.repeat(int(z_num/4), 1).cuda()
+repeat_class_embedding = class_embedding.repeat(z_num, 1).cuda()
 print("repeat class embedding: ",repeat_class_embedding.shape)
 
-for i in range(num_generations):
+for i in tqdm(range(num_generations), desc="num generations"):
     zs = torch.randn((z_num,140),requires_grad=False).cuda()
 
-    """noise_layer = nn.Linear(140,140)
-    noise_layer.load_state_dict(torch.load(f"{prefix}/0_noise_layer.pth"))
+    # noise_layer = nn.Linear(140,140)
+    # noise_layer.load_state_dict(torch.load(f"{prefix}/0_noise_layer.pth"))
 
-    noise_layer = noise_layer.cuda()
-    zs = noise_layer(zs)"""
-    print("zs shape :",zs.shape)
+    # noise_layer = noise_layer.cuda()
+    # zs = noise_layer(zs)
     with torch.no_grad():
         gan_images_tensor = G(zs, repeat_class_embedding)
         resized_images_tensor = nn.functional.interpolate(
