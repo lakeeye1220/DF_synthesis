@@ -8,8 +8,8 @@ from collections import OrderedDict
 
 dim_z_dict = {128: 120, 256: 140, 512: 128} #원래는 100대신에 120
 attn_dict = {128: "64", 256: "128", 512: "64"}
-max_clamp_dict = {128: 0.83, 256: 0.7}
-min_clamp_dict = {128: -0.88, 256: -0.7} #256 0.61,-0.59
+max_clamp_dict = {128: 0.83, 256: 0.5}
+min_clamp_dict = {128: -0.88, 256: -0.5} #256 0.61,-0.59
 DATA_PATH_DICT = {
     "CIFAR": "/path/tools/cifar",
     "RestrictedImageNet": "/mnt/raid/qi/ILSVRC2012_img_train/ImageNet",
@@ -117,13 +117,12 @@ def load_net(model_name):
                 new_state_dict[key.replace('linear.','fc.')] = value
             else:
                 new_state_dict[key]=value
-        print(new_state_dict)
+        #print(new_state_dict)
         
         #print(checkpoint)
         net.load_state_dict(new_state_dict)
         return net
 
-    
     elif model_name =="resnet18_CelebA":
         from ResNet_CelebA import resnet18
         model = resnet18(2)
@@ -136,13 +135,13 @@ def load_net(model_name):
     elif model_name =='resnet34':
         from resnet import ResNet34
         net = ResNet34()
-        net.load_state_dict(torch.load('cifar10_resnet34_9557.pt'))
+        net.load_state_dict(torch.load('./cifar10_resnet34_9557.pt'),strict=False)
         #net.load_state_dict(torch.load('tiny_resnet34_7356.pt'))
         return net
     
     elif model_name =='resnet34_cifar100':
         from resnet import ResNet34
-        net = ResNet34()
+        net = ResNet34(num_classes=100)
         net.load_state_dict(torch.load('cifar100_resnet34_7802.pth'))
         #net.load_state_dict(torch.load('tiny_resnet34_7356.pt'))
         return net
@@ -195,7 +194,7 @@ def load_net(model_name):
             ])
         )
         net.classifier = classifier
-        checkpoint = torch.load('./Oxford_Flower102/classifier_vgg16_9052.pth')
+        checkpoint = torch.load('./pretrained_classifier/classifier_vgg16_9052.pth')
         net.load_state_dict(checkpoint['state_dict'])
         return net
     
@@ -205,6 +204,53 @@ def load_net(model_name):
         network.fc = nn.Linear(number_of_features, 102)
         print(network)
         network.load_state_dict(torch.load('resnet34-333f7ec4.pth'))
+    
+    elif model_name=="vit_cifar":
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        from PIL import Image
+        import requests
 
+        #url = 'https://www.cs.toronto.edu/~kriz/cifar-10-sample/dog10.png'
+        #image = Image.open(requests.get(url, stream=True).raw)
+        feature_extractor = ViTFeatureExtractor.from_pretrained('nateraw/vit-base-patch16-224-cifar10')
+        model = ViTForImageClassification.from_pretrained('nateraw/vit-base-patch16-224-cifar10')
+        
+        return feature_extractor, model
+
+    elif model_name=="vit_food":
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        from PIL import Image
+        import requests
+
+        #url = 'https://www.cs.toronto.edu/~kriz/cifar-10-sample/dog10.png'
+        #image = Image.open(requests.get(url, stream=True).raw)
+        feature_extractor = ViTFeatureExtractor.from_pretrained('eslamxm/vit-base-food101') #Accuracy: 0.8539
+        model = ViTForImageClassification.from_pretrained('eslamxm/vit-base-food101')
+        
+        return feature_extractor, model
+
+    elif model_name=="vit_flower":
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        from PIL import Image
+        import requests
+        #url = 'https://www.cs.toronto.edu/~kriz/cifar-10-sample/dog10.png'
+        #image = Image.open(requests.get(url, stream=True).raw)
+        feature_extractor = ViTFeatureExtractor.from_pretrained('chanelcolgate/vit-base-patch16-224-finetuned-flower')
+        model = ViTForImageClassification.from_pretrained('chanelcolgate/vit-base-patch16-224-finetuned-flower')
+        
+        return feature_extractor, model
+
+    elif model_name=="vit_face":
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        feature_extractor = ViTFeatureExtractor.from_pretrained('jayanta/google-vit-base-patch16-224-face')
+        model = ViTForImageClassification.from_pretrained('jayanta/google-vit-base-patch16-224-face')
+        
+        return feature_extractor, model
+
+    elif model_name=="cct_vit_cifar":
+        from Compact_Transformers.src import cct_7_3x1_32
+        model = cct_7_3x1_32(pretrained=True, progress=True)
+        return model
+       
     else:
         raise ValueError(f"{model_name} is not a supported classifier...")
