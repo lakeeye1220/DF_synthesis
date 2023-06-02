@@ -1,3 +1,5 @@
+# embedding 불러온 후 이미지 생성 후 IS, FID score를 계산하던 옛날 코드입니다.
+
 import torch
 import torch.nn as nn
 import torchvision

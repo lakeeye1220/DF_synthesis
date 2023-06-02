@@ -1,3 +1,5 @@
+# class wise하게 FID, IS score를 계산합니다. dataset 경로와 stat_path 경로 정도 수정하시면 될것 같습니다!
+
 import torch
 import torch.nn as nn
 import torchvision

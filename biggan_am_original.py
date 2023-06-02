@@ -1,3 +1,5 @@
+# 2023/06/02 시점 fix 된 code 그대로입니다. 출력 빈도 등만 수정했습니다.
+
 import BigGAN
 import itertools
 import numpy as np

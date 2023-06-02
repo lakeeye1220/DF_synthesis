@@ -1,3 +1,7 @@
+# 이전에 loss landscape를 위한 코드입니다.
+# 한 batch에 대해서 진행하고 있습니다.
+# class와 batch 정도를 argument로 전달해주시면 됩니다.
+
 import numpy as np
 import torch 
 from torchvision import datasets, transforms

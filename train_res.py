@@ -1,3 +1,5 @@
+# ResNet34 학습시키기 위한 코드입니다. from scratch 학습 결과 test 35% 정도 나왔습니다.(아쉽네요)
+
 '''Train CIFAR10 with PyTorch.'''
 import torch
 import torch.nn as nn

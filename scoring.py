@@ -1,3 +1,5 @@
+# 전체 dataset에 대해서 IS, FID 계산하는 코드입니다. d_path, stat_path 정도 수정하시면 될 것 같습니다!
+
 import torch
 import torch.nn as nn
 import torchvision
