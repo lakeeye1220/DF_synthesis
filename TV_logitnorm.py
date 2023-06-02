@@ -18,6 +18,14 @@ import random
 import copy
 
 
+opts = yaml.safe_load(open("opts.yaml"))
+# Set random seed.
+seed_z = opts["seed_z"]
+"""torch.manual_seed(seed_z)
+torch.cuda.manual_seed(seed_z)
+np.random.seed(seed_z)
+random.seed(seed_z)"""
+
 def get_diversity_loss(
     half_z_num, zs, dloss_function, pred_probs, net, resized_images_tensor):
     pairs = list(itertools.combinations(range(len(zs)), 2))
@@ -112,77 +120,112 @@ def run_biggan_am(
     total_prob =[]
     logit_magnitude = []
 
-    #warm up stage - Total variance loss
     for epoch in range(n_iters):
-        for z_step in range(100):
-            zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)
-            optimizer.zero_grad()
+        arg_label_try = 1
+        while True:    #warm up stage - Total variance loss
+            for z_step in range(50):
+                zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)
+                optimizer.zero_grad()
+                if use_noise_layer:
+                    z_hats = noise_layer(zs)
+                else:
+                    z_hats = zs
+            
+                clamped_embedding = torch.clamp(optim_embedding ,min_clamp, max_clamp)
+                repeat_clamped_embedding = clamped_embedding.repeat(z_num, 1).to(device)
+                inputs_jit = G(z_hats, repeat_clamped_embedding)
+            
+                diff1 = inputs_jit[:,:,:,:-1] - inputs_jit[:,:,:,1:]
+                diff2 = inputs_jit[:,:,:-1,:] - inputs_jit[:,:,1:,:]
+                diff3 = inputs_jit[:,:,1:,:-1] - inputs_jit[:,:,:-1,1:]
+                diff4 = inputs_jit[:,:,:-1,:-1] - inputs_jit[:,:,1:,1:]
+                loss_var = torch.norm(diff1) + torch.norm(diff2) + torch.norm(diff3) + torch.norm(diff4)
+                loss = 6.0e-3*loss_var
+
+                loss.backward()
+                optimizer.step()
+                
+                if z_step %25 ==0:
+                    log_line = f"Epoch: {epoch:0=5d}\tStep: {z_step:0=5d}\t"
+                    log_line += f"TV loss: {loss.item():.4f}\t"
+                    print(log_line)
+
+                total_loss.append(loss.item())
+        
+                if intermediate_dir:
+                    if z_step %50 ==0:
+                        global_step_id = epoch * steps_per_z + z_step
+                        img_f = f"{global_step_id:0=7d}_initial.jpg"
+                        output_image_path = f"{intermediate_dir}/{img_f}"
+                        save_image(
+                        inputs_jit, output_image_path, normalize=True, nrow=10
+                    )
+
+            #save class embedding trained by TV loss
+            np.save(f"{final_dir}/0.npy", clamped_embedding.detach().cpu().numpy())
+            class_embedding = np.load(f"{final_dir}/0.npy")
+            class_embedding = torch.from_numpy(class_embedding)    
+            class_embedding.requires_grad_()
+
+            clamped_embedding = torch.clamp(class_embedding, min_clamp, max_clamp)
+            zs = torch.randn((1, dim_z), requires_grad=False).to(device)
             if use_noise_layer:
                 z_hats = noise_layer(zs)
             else:
                 z_hats = zs
-          
-            clamped_embedding = torch.clamp(optim_embedding ,min_clamp, max_clamp)
-            repeat_clamped_embedding = clamped_embedding.repeat(z_num, 1).to(device)
-            inputs_jit = G(z_hats, repeat_clamped_embedding)
-           
-            diff1 = inputs_jit[:,:,:,:-1] - inputs_jit[:,:,:,1:]
-            diff2 = inputs_jit[:,:,:-1,:] - inputs_jit[:,:,1:,:]
-            diff3 = inputs_jit[:,:,1:,:-1] - inputs_jit[:,:,:-1,1:]
-            diff4 = inputs_jit[:,:,:-1,:-1] - inputs_jit[:,:,1:,1:]
-            loss_var = torch.norm(diff1) + torch.norm(diff2) + torch.norm(diff3) + torch.norm(diff4)
-            loss = 6.0e-3*loss_var
+            gan_images_tensor = G(z_hats, clamped_embedding)
+            resized_images_tensor = nn.functional.interpolate(
+                        gan_images_tensor, size=32 #Flower 224, CelebA 128
+                    )
 
-            loss.backward()
-            optimizer.step()
+            # apply class target 
+            outputs,_,_,_,_,_ = net(resized_images_tensor)
+            if target_class == torch.argmax(outputs, dim=1):
+                print("target class : ",target_class)
+                labels = torch.LongTensor([target_class] * z_num).to(device)
             
-            if z_step %50 ==0:
-                log_line = f"Epoch: {epoch:0=5d}\tStep: {z_step:0=5d}\t"
-                log_line += f"TV loss: {loss.item():.4f}\t"
-                print(log_line)
+                optim_params2 = [class_embedding]
+                if use_noise_layer:
+                    noise_layer = nn.Linear(dim_z, dim_z).to(device)
+                    print("noise layer shape :",dim_z)
+                    noise_layer.train()
+                    optim_params2 += [params for params in noise_layer.parameters()]
+                
+                # optimizer2 = optim.Adam(optim_params2+[T], lr=lr, weight_decay=dr)
+                optimizer2 = optim.Adam(optim_params2, lr=lr, weight_decay=dr)
 
-            total_loss.append(loss.item())
-    
-            if intermediate_dir:
-                if z_step %50 ==0:
-                    global_step_id = epoch * steps_per_z + z_step
-                    img_f = f"{global_step_id:0=7d}_initial.jpg"
-                    output_image_path = f"{intermediate_dir}/{img_f}"
-                    save_image(
-                    inputs_jit, output_image_path, normalize=True, nrow=10
-                )
+                break
+            else:
+                arg_label_try += 1
+                print(f"class {torch.argmax(outputs, dim=1).item()} selected -> {arg_label_try}th run start")
+                embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
+                optim_embedding = embedding_layer(torch.LongTensor([target_class])).detach()
+            
+                optim_comps = {
+                    "optim_embedding": optim_embedding,
+                    "use_noise_layer": use_noise_layer,
+                }
+                optim_embedding.requires_grad_()
+                optim_params = [optim_embedding]
+            
+                if use_noise_layer:
+                    noise_layer = nn.Linear(dim_z, dim_z).to(device)
+                    noise_layer.train()
+                    optim_params += [params for params in noise_layer.parameters()]
+                    optim_comps["noise_layer"] = noise_layer
 
-        #save class embedding trained by TV loss
-        np.save(f"{final_dir}/0.npy", clamped_embedding.detach().cpu().numpy())
-        class_embedding = np.load(f"{final_dir}/0.npy")
-        class_embedding = torch.from_numpy(class_embedding)    
-        class_embedding.requires_grad_()
+                # T = torch.empty((1,))
+                # torch.nn.init.normal(T,3.0,1)
+                T = torch.tensor(1.0)
+                T.requires_grad_(True)
 
-        clamped_embedding = torch.clamp(class_embedding, min_clamp, max_clamp)
-        zs = torch.randn((1, dim_z), requires_grad=False).to(device)
-        if use_noise_layer:
-            z_hats = noise_layer(zs)
-        else:
-            z_hats = zs
-        gan_images_tensor = G(z_hats, clamped_embedding)
-        resized_images_tensor = nn.functional.interpolate(
-                    gan_images_tensor, size=32 #Flower 224, CelebA 128
-                )
-
-        # apply class target 
-        outputs,_,_,_,_,_ = net(resized_images_tensor)
-        target_class = torch.argmax(outputs, dim=1)
-        print("target class : ",target_class)
-        labels = torch.LongTensor([target_class] * z_num).to(device)
-        
-        optim_params2 = [class_embedding]
-        if use_noise_layer:
-            noise_layer = nn.Linear(dim_z, dim_z).to(device)
-            print("noise layer shape :",dim_z)
-            noise_layer.train()
-            optim_params2 += [params for params in noise_layer.parameters()]
-        
-        optimizer2 = optim.Adam(optim_params2+[T], lr=lr, weight_decay=dr)
+                optimizer = optim.Adam(optim_params, lr=lr, weight_decay=dr)
+                torch.set_rng_state(state_z)
+                #labels_target = torch.LongTensor([0,1,2,3,4,5,6,7,8,9] * 2).to(device)
+                total_loss = []
+                total_T = []
+                total_prob =[]
+                logit_magnitude = []
         
         for z_step in range(steps_per_z):
             optimizer2.zero_grad()
@@ -262,10 +305,11 @@ def run_biggan_am(
     np.savetxt(os.path.join(file_path,'temperature.csv'), total_T, fmt='%.3f')
     np.savetxt(os.path.join(file_path,'gt_probability.csv'), total_prob, fmt='%.3f')
 
-    return optim_comps
+    return optim_comps, clamp_embedding
 
 
 def save_final_samples(
+    clamp_embedding,
     optim_comps,
     min_clamp,
     max_clamp,
@@ -279,7 +323,8 @@ def save_final_samples(
     final_dir,
     prefix_idx
 ):
-    optim_embedding = optim_comps["optim_embedding"]
+    # optim_embedding = optim_comps["optim_embedding"]
+    optim_embedding = clamp_embedding
     optim_embedding_clamped = torch.clamp(optim_embedding, min_clamp, max_clamp)
     repeat_optim_embedding = optim_embedding_clamped.repeat(4, 1).to(device)
 
@@ -309,7 +354,7 @@ def save_final_samples(
     np.save(
         f"{final_dir}/{prefix_idx}.npy",
         # repeat_optim_embedding.detach().cpu().numpy(),
-        optim_embedding.detach().cpu().numpy(),
+        clamp_embedding.detach().cpu().numpy(),
     )
     if optim_comps["use_noise_layer"]:
         torch.save(
@@ -323,14 +368,6 @@ def save_final_samples(
 
 
 def main():
-    opts = yaml.safe_load(open("opts.yaml"))
-    # Set random seed.
-    seed_z = opts["seed_z"]
-    torch.manual_seed(seed_z)
-    torch.cuda.manual_seed(seed_z)
-    np.random.seed(seed_z)
-    random.seed(seed_z)
-
     init_method = opts["init_method"]
     print(f"Initialization method: {init_method}")
     if init_method == "target":
@@ -401,7 +438,7 @@ def main():
         repeat_original_embedding = original_embedding_clamped.repeat(num_final, 1).to(device)
 
     for i in range(int(opts["n_iters"])):
-        optim_comps = run_biggan_am(
+        optim_comps, embedding = run_biggan_am(
             #init_embedding,
             device,
             opts["lr"],
@@ -428,6 +465,7 @@ def main():
         )
         if final_dir:
             save_final_samples(
+                embedding,
                 optim_comps,
                 min_clamp,
                 max_clamp,

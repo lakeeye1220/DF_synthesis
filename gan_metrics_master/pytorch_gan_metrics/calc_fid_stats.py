@@ -2,6 +2,8 @@
 
 import argparse
 import os
+import sys
+sys.path.append('/home/dyl9912/workspace/Inversion/DF_synthesis')
 
 from utils import calc_and_save_stats, class_wise_calc_and_save_stats
 import torchvision.datasets as datasets
@@ -35,7 +37,6 @@ if __name__ == '__main__':
     
     transform_train = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
 
     dataset = datasets.CIFAR10(root=args.data_path, train=True, download=True, transform=transform_train)

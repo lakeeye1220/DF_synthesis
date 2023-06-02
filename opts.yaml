@@ -1,8 +1,9 @@
-# CUDA_VISIBLE_DEVICES=0,1 python3 biggan_am_original.py
-
 resolution: 256
+dataset: "cifar"
+img_size: 224 #viT=224, CNN=32 in cifar
+generation_batch_size: 50
 target_class: 0
-model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50 vgg19_flower resnet18_CUB200",resnet34_tinyImageNet,resnet34_cifar100.
+model: "vit_cifar"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50" "vgg19_flower" "resnet18_CUB200" "resnet34_tinyImageNet" "resnet34_cifar100" "vit_cifar" "cct_vit_cifar" "vit_flower"
 total_class: 10
 dloss_function: ""  # "", "softmax", "pixelwise", or "features".
 init_method: "random"  # "mean", "top", "random", or "target".
@@ -10,12 +11,11 @@ init_num: 1
 n_iters: 1
 use_noise_layer: False
 z_num: 20
-steps_per_z: 501
+steps_per_z: 101
 lr: 0.01
 dr: 0.99
 alpha: 0.1
 noise_std: 0.1
-seed_z: 100
-l_smooth: 0 # label smoothing alpha value (if 0 -> no smoothing)
-intermediate_dir: "exprs/TV/cifar10/intermediate"
-final_dir: "exprs/TV/cifar10/"
+seed_z: 0
+intermediate_dir: "cifar10_0/intermediate"
+final_dir: "cifar10_0"
