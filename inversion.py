@@ -20,6 +20,7 @@ import torch.nn as nn
 from transformers import pipeline
 from torchvision.transforms.functional import to_pil_image
 import torchvision.utils as vutils
+from skimage.util import random_noise
 
 def get_initial_embeddings(
     resolution,
@@ -168,11 +169,10 @@ def run_biggan_am(
     model_name
 ):
     
-    embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
-    optim_embedding = embedding_layer(torch.LongTensor([target_class])).detach()
-    mse_criterion = nn.MSELoss()
+    #embedding_layer = nn.Embedding(total_class,128) # num_embeddings, embedding_dim
+    #optim_embedding = embedding_layer(torch.LongTensor([target_class])).detach()
     #mean_optimal_embedding = init_embeddings.detach()
-    #optim_embedding = init_embeddings.to(device)
+    optim_embedding = init_embeddings.to(device)
     print("optim embedding : ",optim_embedding.shape)
    
     optim_comps = {
@@ -200,9 +200,12 @@ def run_biggan_am(
     total_T = []
     total_prob =[]
     logit_magnitude = []
+    best_acc=0.0
+    threshold=0.94
 
     #warm up stage - Total variance loss
     for epoch in range(n_iters):
+        '''
         for z_step in range(50):
             zs = torch.randn((z_num, dim_z), requires_grad=False).to(device)
             optimizer.zero_grad()
@@ -210,7 +213,6 @@ def run_biggan_am(
                 z_hats = noise_layer(zs)
             else:
                 z_hats = zs
-          
             clamped_embedding = torch.clamp(optim_embedding ,min_clamp, max_clamp)
             repeat_clamped_embedding = clamped_embedding.repeat(z_num, 1).to(device)
             inputs_jit = G(z_hats, repeat_clamped_embedding)
@@ -247,7 +249,6 @@ def run_biggan_am(
         class_embedding.requires_grad_()
 
         # call the class embedding optimized by total variation, and predict the pseudo label
-        '''
         clamped_embedding = torch.clamp(class_embedding, min_clamp, max_clamp)
         zs = torch.randn((1, dim_z), requires_grad=False).to(device)
         if use_noise_layer:
@@ -261,14 +262,14 @@ def run_biggan_am(
         '''
         print(target_class,'-th class image synthesis stage start!')
         labels = torch.LongTensor([target_class] * z_num).to(device)
-
         optim_comps2 = {
-        "class_embedding": class_embedding,
+        #"class_embedding": class_embedding,
+        "class_embedding":optim_embedding,
         "use_noise_layer": use_noise_layer,
         "T": T
         }
-        optim_params2 = [class_embedding]
-        #optim_params2 = [optim_embedding]
+        #optim_params2 = [class_embedding]
+        optim_params2 = [optim_embedding]
         if use_noise_layer:
             noise_layer = nn.Linear(dim_z, dim_z).to(device)
             noise_layer.train()
@@ -287,8 +288,8 @@ def run_biggan_am(
             else:
                 z_hats = zs
 
-            clamp_embedding = torch.clamp(class_embedding ,min_clamp, max_clamp)
-            #clamp_embedding = torch.clamp(optim_embedding ,min_clamp, max_clamp)
+            #clamp_embedding = torch.clamp(class_embedding ,min_clamp, max_clamp)
+            clamp_embedding = torch.clamp(optim_embedding,min_clamp, max_clamp)
             embedding_norm = clamp_embedding.norm(2, dim=0, keepdim=True)
             repeat_clamped_embedding = clamp_embedding.repeat(z_num, 1).to(device)
             gan_images_tensor = G(z_hats, repeat_clamped_embedding)
@@ -299,13 +300,18 @@ def run_biggan_am(
             resized_images_tensor = nn.functional.interpolate(
                 gan_images_tensor, size=img_size # ViT CIFAR10 224 Flower 224, CelebA 128
             )
+            
+            #small_noise = torch.randn_like(resized_images_tensor) * 0.05
+            #resized_images_tensor.add_(small_noise).clamp_(min=-1.0, max=1.0)
+
             if 'vit' in model_name:
                 model = model.to(device)
                 outputs = model(resized_images_tensor)
                 pred_logits = outputs.logits
+            elif 'cct' in model_name:
+                pred_logits = net(resized_images_tensor)
             else:
                 pred_logits,_,_,_,_,_ = net(resized_images_tensor)
-                #pred_logits = net(resized_images_tensor)
 
             norm = torch.norm(pred_logits,p=2,dim=-1,keepdim=True) + 1e-7
             logit_norm = torch.div(pred_logits,norm)/final_T.cuda()
@@ -314,6 +320,13 @@ def run_biggan_am(
             avg_target_prob = pred_probs[:, target_class].mean().item()
 
             loss = criterion(logit_norm, labels)
+
+            diff1 = resized_images_tensor[:,:,:,:-1] - resized_images_tensor[:,:,:,1:]
+            diff2 = resized_images_tensor[:,:,:-1,:] - resized_images_tensor[:,:,1:,:]
+            diff3 = resized_images_tensor[:,:,1:,:-1] - resized_images_tensor[:,:,:-1,1:]
+            diff4 = resized_images_tensor[:,:,:-1,:-1] - resized_images_tensor[:,:,1:,1:]
+            loss_var = torch.norm(diff1) + torch.norm(diff2) + torch.norm(diff3) + torch.norm(diff4)
+            loss +=  1.5e-3*loss_var
 
             if dloss_function:
                 diversity_loss = get_diversity_loss(
@@ -343,7 +356,8 @@ def run_biggan_am(
             logit_magnitude.append(torch.sum(norm).item()/z_num)
     
             if intermediate_dir:
-                if z_step %50 ==0:
+                if avg_target_prob > best_acc:
+                    best_acc = avg_target_prob
                     global_step_id = epoch * steps_per_z + z_step
                     img_f = f"{global_step_id:0=7d}.jpg"
                     output_image_path = f"{intermediate_dir}/{img_f}"
@@ -351,8 +365,10 @@ def run_biggan_am(
                     gan_images_tensor, output_image_path, normalize=True, nrow=10
                 )
             torch.cuda.empty_cache()
+            if best_acc >= threshold:
+                break
 
-        np.save(f"{class_dir}/{target_class}_embedding.npy", clamped_embedding.detach().cpu().numpy())
+        np.save(f"{class_dir}/{target_class}_embedding.npy", clamp_embedding.detach().cpu().numpy())
         #class_embedding = np.load(f"{class_dir}/{target_class}_embedding.npy")
         #class_embedding = torch.from_numpy(class_embedding)    
 
@@ -441,7 +457,7 @@ def denormalize(image_tensor, dataset):
 
 def save_instance_image(optim_comps,G,img_size,batch_size,target_class,z_num,dim_z,class_dir,final_dir,dataset):
     final_dir = 'Fake_'+final_dir+'/'+str(target_class)+'/'
-    num_generations = int(5000/batch_size)+1
+    num_generations = int(5000/batch_size)
     for i in range(num_generations):
         zs = torch.randn((batch_size,dim_z),requires_grad=False).cuda()
         if optim_comps["use_noise_layer"]:
@@ -537,21 +553,6 @@ def main():
     target_class = opts["target_class"]
     batch_size = opts["generation_batch_size"]
 
-    init_embeddings = get_initial_embeddings(
-        resolution,
-        init_method,
-        model_name,
-        init_num,
-        min_clamp,
-        max_clamp,
-        dim_z,
-        G,
-        net,
-        feature_extractor,
-        model,
-        target_class,
-        noise_std,
-    )
     final_dir = opts["final_dir"] # store all class images for evaluating the IS and FID scores
     if final_dir:
         print(f"Saving final samples in {final_dir}.")
@@ -565,6 +566,21 @@ def main():
     state_z = torch.get_rng_state()
 
     for target_class in range(int(opts["total_class"])):
+        init_embeddings = get_initial_embeddings(
+        resolution,
+        init_method,
+        model_name,
+        init_num,
+        min_clamp,
+        max_clamp,
+        dim_z,
+        G,
+        net,
+        feature_extractor,
+        model,
+        target_class,
+        noise_std,
+        )
         intermediate_dir = final_dir+'/'+str(target_class)+'/intermediate' # store intermediate images
         class_dir = final_dir+'/'+str(target_class) # store final embedding and image of each class (target class)
 
