@@ -3,13 +3,15 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from collections import OrderedDict
+import matplotlib.pyplot as plt
+import numpy as np
 
 #from robustness import datasets, model_utils
 
 dim_z_dict = {128: 120, 256: 140, 512: 128} #원래는 100대신에 120
 attn_dict = {128: "64", 256: "128", 512: "64"}
-max_clamp_dict = {128: 0.83, 256: 0.5}
-min_clamp_dict = {128: -0.88, 256: -0.5} #256 0.61,-0.59
+max_clamp_dict = {128: 0.83, 256: 0.7}
+min_clamp_dict = {128: -0.88, 256: -0.7} #256 0.61,-0.59
 DATA_PATH_DICT = {
     "CIFAR": "/path/tools/cifar",
     "RestrictedImageNet": "/mnt/raid/qi/ILSVRC2012_img_train/ImageNet",
@@ -19,6 +21,25 @@ DATA_PATH_DICT = {
     "S2W": "/path/tools/summer2winter_yosemite",
 }
 
+MODEL_DICT = {
+    "vit-b16-224-in21k": "google/vit-base-patch16-224-in21k",
+    "vit-b32-224-in21k": "google/vit-base-patch32-224-in21k",
+    "vit-l32-224-in21k": "google/vit-large-patch32-224-in21k",
+    "vit-l15-224-in21k": "google/vit-large-patch16-224-in21k",
+    "vit-h14-224-in21k": "google/vit-huge-patch14-224-in21k",
+    "vit-b16-224": "google/vit-base-patch16-224",
+    "vit-l16-224": "google/vit-large-patch16-224",
+    "vit-b16-384": "google/vit-base-patch16-384",
+    "vit-b32-384": "google/vit-base-patch32-384",
+    "vit-l16-384": "google/vit-large-patch16-384",
+    "vit-l32-384": "google/vit-large-patch32-384",
+    "vit-b16-224-dino": "facebook/dino-vitb16",
+    "vit-b8-224-dino": "facebook/dino-vitb8",
+    "vit-s16-224-dino": "facebook/dino-vits16",
+    "vit-s8-224-dino": "facebook/dino-vits8",
+    "beit-b16-224-in21k": "microsoft/beit-base-patch16-224-pt22k-ft22k",
+    "beit-l16-224-in21k": "microsoft/beit-large-patch16-224-pt22k-ft22k",
+}
 
 def get_config(resolution):
     return {
@@ -51,6 +72,31 @@ def get_config(resolution):
         "resolution": resolution,
         "n_classes": 1000,
     }
+
+def viz_weights(model_name,model,num_class,file_path):
+    weight_norm=[]
+    if 'vit' in model_name:
+        weight=model.classifier.weight
+        bias=model.calssifier.bias.unsqueeze(-1)
+    elif 'cct' in model_name:
+        weight=model.module.classifier.fc.weight
+        bias=model.module.classifier.fc.bias.unsqueeze(-1)
+    else:
+        weight=model.linear.weight
+        bias=model.linear.bias.unsqueeze(-1)
+
+    weight=torch.cat((weight,bias),dim=1)
+    for i in range(num_class):
+        weight_norm.append(torch.norm(weight[i],2).item())
+    plt.figure()
+    classes=np.arange(num_class)
+    plt.scatter(classes,weight_norm)
+    plt.xlabel('Class Index')
+    plt.ylabel('Weight Norm')
+    plt.xlim(0,weight.shape[0])
+    plt.savefig(os.path.join(file_path,model_name+'_weight_norm.pdf'),bbox_inches='tight')
+    np.savetxt(os.path.join(file_path,model_name+'_weight_norm.csv'), weight_norm, delimiter=",", fmt='%.2f')
+    plt.close()
 
 
 def load_mit(model_name):
@@ -134,6 +180,7 @@ def load_net(model_name):
         
     elif model_name =='resnet34':
         from resnet import ResNet34
+        import torch
         net = ResNet34()
         net.load_state_dict(torch.load('./cifar10_resnet34_9557.pt'),strict=False)
         #net.load_state_dict(torch.load('tiny_resnet34_7356.pt'))
@@ -141,8 +188,9 @@ def load_net(model_name):
     
     elif model_name =='resnet34_cifar100':
         from resnet import ResNet34
+        import torch
         net = ResNet34(num_classes=100)
-        net.load_state_dict(torch.load('cifar100_resnet34_7802.pth'))
+        net.load_state_dict(torch.load('./cifar100_resnet34_7802.pth'))
         #net.load_state_dict(torch.load('tiny_resnet34_7356.pt'))
         return net
     
@@ -159,6 +207,8 @@ def load_net(model_name):
         return net
     
     elif model_name=='vgg19_flower':
+        import torch
+        import torch.nn as nn
         net = models.vgg19(pretrained=False)
         classifier = nn.Sequential(OrderedDict([
                           ('fc1', nn.Linear(25088, 4096)), # First layer
@@ -167,8 +217,9 @@ def load_net(model_name):
                           ('output', nn.LogSoftmax(dim=1)) # Apply loss function
                           ]))
         net.classifier = classifier
-        checkpoint = torch.load('./Oxford_Flower102/classifier.pth')
+        checkpoint = torch.load('./pretrained_classifier/flower102_vgg19_classifier.pth')
         net.load_state_dict(checkpoint['state_dict'])
+        net.eval()
         return net
     
     elif model_name=='vgg16_flower':
@@ -217,6 +268,28 @@ def load_net(model_name):
         
         return feature_extractor, model
 
+    elif model_name=="vit_cifar100": #9316
+        import timm
+        import torch
+        from torch import nn
+
+        model = timm.create_model("timm/vit_base_patch16_224.orig_in21k_ft_in1k",
+        pretrained=False)
+        model.head = nn.Linear(model.head.in_features, 100)
+        model.load_state_dict(
+            torch.hub.load_state_dict_from_url(
+                "https://huggingface.co/edadaltocg/vit_base_patch16_224_in21k_ft_cifar100/resolve/main/pytorch_model.bin",
+                map_location="cpu",
+                file_name="vit_base_patch16_224_in21k_ft_cifar100.pth",
+            )
+        )
+        #from transformers import ViTFeatureExtractor, ViTForImageClassification
+        #from PIL import Image
+        #feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
+        #model = ViTForImageClassification.from_pretrained('edadaltocg/vit_base_patch16_224_in21k_ft_cifar100')
+
+        return None, model
+
     elif model_name=="vit_food":
         from transformers import ViTFeatureExtractor, ViTForImageClassification
         from PIL import Image
@@ -247,10 +320,149 @@ def load_net(model_name):
         
         return feature_extractor, model
 
-    elif model_name=="cct_vit_cifar":
+    elif model_name=="vit_flowers102":
+        from transformers import ViTFeatureExtractor, ViTForImageClassification
+        from transformers.models.auto.modeling_auto import AutoModelForImageClassification
+        feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k',num_labels=102,ignore_mismatched_sizes=True,image_size=224)
+        model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224-in21k',num_labels=102,image_size=224)
+        #ckpt = torch.load('./vit-finetune/output/flowers102/version_2/checkpoints/best_step_700_acc_9931.ckpt')["state_dict"]
+        #ckpt = torch.load('./vit-finetune/output/flowers102/version_4/checkpoints/best_step_1000_acc_9902.ckpt')["state_dict"]
+        #ckpt = torch.load('./vit-finetune/output/flowers102/version_6/checkpoints/best_step_1400_acc_9902.ckpt')["state_dict"]
+        #ckpt = torch.load('./vit-finetune/output/flowers102/version_6/checkpoints/last.ckpt')["state_dict"]
+        '''
+        model = AutoModelForImageClassification.from_pretrained(
+            'google/vit-base-patch16-224',
+            num_labels=102,
+            ignore_mismatched_sizes=True,
+            image_size=224,
+        )
+        # Remove prefix from key names
+        
+        new_state_dict = {}
+        for k, v in ckpt.items():
+            if k.startswith("net"):
+                k = k.replace("net" + ".", "")
+                new_state_dict[k] = v
+        '''
+        #print(new_state_dict)
+        #print(model)
+        #print(feature_extractor)
+        #feature_extractor.load_state_dict(new_state_dict,strict=True)
+        #model.load_state_dict(new_state_dict, strict=True)
+        model.eval()
+        return feature_extractor, model
+
+    elif model_name=="cct_cifar":
         from Compact_Transformers.src import cct_7_3x1_32
         model = cct_7_3x1_32(pretrained=True, progress=True)
         return model
+
+    elif model_name=="cct_flowers_fromScratch":
+        from Compact_Transformers.src import cct_7_7x2_224_sine
+        model = cct_7_7x2_224_sine(pretrained=True, progress=True)
+        model.classifier
+        model.eval()
+        return model
+
+    elif model_name=="cct_flowers_finetune":
+        from Compact_Transformers.src import cct_14_7x2_384_fl
+        model = cct_14_7x2_384_fl(pretrained=True, progress=True)
+        model.eval()
+        return model
+    
+    elif model_name=='resnet50_iitpet':
+        import timm
+        import torch
+        from torch import nn
+        import torchvision
+        #from functools import partial
+        #import pickle
+        #pickle.load = partial(pickle.load, encoding="latin1")
+        #pickle.Unpickler = partial(pickle.Unpickler, encoding="latin1")
+
+        model = timm.create_model('resnet50-oxford-iiit-pet', pretrained=True)
+        #model =timm.create_model('vit_base_patch16_224_in21k', pretrained=True, num_classes=5)
+        #model = models.resnet50(pretrained=False)
+        #print(model)
+        
+        #model.fc = nn.Linear(model.fc.in_features, 37)
+       
+        #checkpoint = torch.hub.load_state_dict_from_url(
+                #"https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-rsb-weights/",
+        #        "https://huggingface.co/nateraw/resnet50-oxford-iiit-pet-v2/blob/main/pytorch_model.bin",
+        #        map_location="cpu",
+        #        #file_name="resnet50_a1_0-14fe96d1.pth"
+        #    )
+        #print(checkpoint)
+        #model = torch.load(checkpoint, map_location=lambda storage, loc: storage, pickle_module=pickle)
+        #model.load_state_dict(checkpoint['state_dict'])
+        model.eval()
+        '''
+        #from modelz import ResnetModel
+        #model = ResnetModel.from_pretrained('nateraw/resnet50-oxford-iiit-pet-v2')
+        model = timm.create_model('nateraw/resnet50-oxford-iiit-pet-v2')
+        model.eval()
+        '''
+        return model
+    
+    elif model_name =='resnet_place365':
+        import torch
+        from torch.autograd import Variable as V
+        import torchvision.models as models
+        from torchvision import transforms as trn
+        from torch.nn import functional as F
+        import os
+        from PIL import Image
+
+        # th architecture to use
+        arch = 'resnet18'
+
+        # load the pre-trained weights
+        model_file = '%s_places365.pth.tar' % arch
+        if not os.access(model_file, os.W_OK):
+            weight_url = 'http://places2.csail.mit.edu/models_places365/' + model_file
+            os.system('wget ' + weight_url)
+
+        model = models.__dict__[arch](num_classes=365)
+        checkpoint = torch.load(model_file, map_location=lambda storage, loc: storage)
+        state_dict = {str.replace(k,'module.',''): v for k,v in checkpoint['state_dict'].items()}
+        model.load_state_dict(state_dict)
+        model.eval()
+
+
+        # load the image transformer
+        centre_crop = trn.Compose([
+                trn.Resize((256,256)),
+                trn.CenterCrop(224),
+                trn.ToTensor(),
+                trn.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+
+        # load the class label
+        file_name = 'categories_places365.txt'
+        if not os.access(file_name, os.W_OK):
+            synset_url = 'https://raw.githubusercontent.com/csailvision/places365/master/categories_places365.txt'
+            os.system('wget ' + synset_url)
+        classes = list()
+        with open(file_name) as class_file:
+            for line in class_file:
+                classes.append(line.strip().split(' ')[0][3:])
+        classes = tuple(classes)
+
+        return model
+        
+    elif model_name == 'resnet50_cartoon':
+        import torchvision.models as models
+        import torch
+        model = models.__dict__['resnet50']()
+        checkpoint = torch.load('../training_data/examples/imagenet/checkpoint.pth')
+        #print(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint['state_dict'])
+        model.eval()
+        #print(model)
+        return model
+
+        #inputs = processor(image, return_tensors="pt")
        
     else:
         raise ValueError(f"{model_name} is not a supported classifier...")
