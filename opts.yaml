@@ -1,21 +1,30 @@
 resolution: 256
-dataset: "cifar"
-img_size: 32 #viT=224, CNN=32 in cifar
-generation_batch_size: 50
+dataset: "cifar10"
+img_size: 32 # vit-nat = 336, mlp-mixer, beit, deit, viT=224,  ms-coco=224, CNN=32 in cifar
+generation_batch_size: 1   # generation batch size should be 1 For downstream task
 target_class: 0
-model: "resnet34"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50" "vgg19_flower" "resnet18_CUB200" "resnet34_tinyImageNet" "resnet34_cifar100" "vit_cifar" "cct_vit_cifar" "vit_flower"
+model: "resnet34_cifar10"  # "alexnet", "inception_v3", "mit_alexnet", "mit_resnet18", or "madrylab_resnet50" "vgg19_flower" "resnet18_CUB200" "resnet34_tinyImageNet" "resnet34_cifar100" "vit_cifar" "cct_cifar" "vit_flower" "vit_flowers102" "cct_flowers_fromScratch" "cct_flowers_finetune" "resnet50_iitpet" "resnet_place365" "vit_cars196" "resnet50-oxford-iiit-pet" "beit-finetuned-cifar10" "vit-eurosat"'densenet201_caltech' "vit_inat" "vit_coyo"
 total_class: 10
+img_len: 5000
 dloss_function: ""  # "", "softmax", "pixelwise", or "features".
-init_method: "random"  # "mean", "top", "random", or "target".
+init_method: "target"  # "mean", "top", "random", or "target".
 init_num: 1
 n_iters: 1
 use_noise_layer: False
-z_num: 20
-steps_per_z: 101
+z_num: 10
+steps_per_z: 401
 lr: 0.01
+# lr: 5e-5
 dr: 0.99
 alpha: 0.1
 noise_std: 0.1
-seed_z: 500
-intermediate_dir: "cifar10/intermediate"
-final_dir: "cifar10"
+seed_z: 411870
+threshold_ce: 0.005
+threshold_prob: 0.98
+threshold_img: 0.001
+# intermediate_dir: "ours_abs_vit_main_f_cifar100_logitnorm/intermediate"
+#intermediate_dir: "ours_resnet34_cifar10_bs20_.98_.005_seed4_1011/intermediate"
+# final_dir: "ours_abs_vit_main_f_cifar100_logitnorm"
+intermediate_dir: "ours_CIFAR_target_bs_15_thres_0.98_lr_0.05_/intermediate"
+final_dir: "ours_CIFAR_target_bs_15_thres_0.98_lr_0.05_"
+#final_dir: "ours_resnet34_cifar10_bs20_.98_.005_seed4_1011"

@@ -1,0 +1,19 @@
+resolution: 256
+dataset: "cifar10"
+img_size: 32 #viT=224, CNN=32 in cifar
+generation_batch_size: 50
+target_class: 0
+model: "resnet34_cifar10" #"resnet34_cifar100" "vit_cifar" "cct_cifar" "resnet_place365"
+total_class: 10
+img_len: 50000
+init_method: "mean"  # "mean" or "random".
+init_num: 1
+n_iters: 1
+z_num: 15 #batch_size
+steps_per_z: 401
+lr: 0.01
+dr: 0.99
+seed_z: 411870
+threshold: 0.98
+intermediate_dir: "90over_10seed_th098_resnet34_cifar10_T_1,7_stepLR0.5_/intermediate"
+final_dir: "90over_10seed_th098_resnet34_cifar10_T_1,7_stepLR0.5_"
